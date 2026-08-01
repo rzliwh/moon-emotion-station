@@ -1,0 +1,300 @@
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { toTraceView } from '../core/schema.js';
+import { createMoonTexture, createMoonBumpMap, createEarthTexture } from './textures.js';
+import { createTraceDetail } from './trace-detail.js';
+
+export class MoonScene {
+  constructor(container) {
+    this.container = container;
+    this.traces = [];
+    this.traceMeshes = [];
+    this.onTraceClick = null;
+    this.onZoomChange = null;
+    this.init();
+  }
+
+  init() {
+    this.scene = new THREE.Scene();
+
+    this.camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+    this.camera.position.set(0, 0, 5);
+
+    this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    this.renderer.setSize(window.innerWidth, window.innerHeight);
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.setClearColor(0x000511, 1);
+    this.container.appendChild(this.renderer.domElement);
+
+    this.setupLights();
+    this.createStars();
+    this.createMoon();
+    this.createEarth();
+    this.setupControls();
+    this.setupRaycaster();
+
+    window.addEventListener('resize', () => this.onResize());
+    this.animate();
+  }
+
+  setupLights() {
+    const ambient = new THREE.AmbientLight(0x333355, 0.4);
+    this.scene.add(ambient);
+
+    const sun = new THREE.DirectionalLight(0xffffff, 1.2);
+    sun.position.set(5, 3, 5);
+    this.scene.add(sun);
+
+    const fill = new THREE.DirectionalLight(0x4466aa, 0.3);
+    fill.position.set(-5, -2, -3);
+    this.scene.add(fill);
+  }
+
+  createStars() {
+    const geo = new THREE.BufferGeometry();
+    const count = 8000;
+    const positions = new Float32Array(count * 3);
+    const sizes = new Float32Array(count);
+    for (let i = 0; i < count; i++) {
+      const r = 100 + Math.random() * 400;
+      const theta = Math.random() * Math.PI * 2;
+      const phi = Math.acos(Math.random() * 2 - 1);
+      positions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+      positions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
+      positions[i * 3 + 2] = r * Math.cos(phi);
+      sizes[i] = Math.random() * 1.5 + 0.3;
+    }
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geo.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+
+    const mat = new THREE.PointsMaterial({
+      color: 0xffffff,
+      size: 0.8,
+      sizeAttenuation: true,
+      transparent: true,
+      opacity: 0.8,
+      depthWrite: false
+    });
+    this.stars = new THREE.Points(geo, mat);
+    this.scene.add(this.stars);
+  }
+
+  createMoon() {
+    const geo = new THREE.SphereGeometry(1, 128, 128);
+    const colorTex = createMoonTexture();
+    const bumpTex = createMoonBumpMap();
+
+    const mat = new THREE.MeshStandardMaterial({
+      map: colorTex,
+      bumpMap: bumpTex,
+      bumpScale: 0.06,
+      roughness: 0.95,
+      metalness: 0.0
+    });
+
+    this.moon = new THREE.Mesh(geo, mat);
+    this.moon.rotation.y = Math.PI;
+    this.scene.add(this.moon);
+
+    this.traceGroup = new THREE.Group();
+    this.moon.add(this.traceGroup);
+  }
+
+  createEarth() {
+    const geo = new THREE.SphereGeometry(0.12, 32, 32);
+    const earthTex = createEarthTexture();
+
+    const mat = new THREE.MeshStandardMaterial({
+      map: earthTex,
+      emissive: 0x112244,
+      emissiveIntensity: 0.3,
+      roughness: 0.8
+    });
+
+    this.earth = new THREE.Mesh(geo, mat);
+    this.earth.position.set(0, 0.5, 8);
+    this.scene.add(this.earth);
+
+    const glowGeo = new THREE.SphereGeometry(0.16, 32, 32);
+    const glowMat = new THREE.MeshBasicMaterial({
+      color: 0x378add,
+      transparent: true,
+      opacity: 0.15,
+      side: THREE.BackSide
+    });
+    const glow = new THREE.Mesh(glowGeo, glowMat);
+    this.earth.add(glow);
+  }
+
+  setupControls() {
+    this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+    this.controls.enableDamping = true;
+    this.controls.dampingFactor = 0.05;
+    this.controls.enableZoom = true;
+    this.controls.enablePan = false;
+    this.controls.minDistance = 1.5;
+    this.controls.maxDistance = 8;
+    this.controls.rotateSpeed = 0.5;
+    this.controls.autoRotate = false;
+
+    this.controls.addEventListener('change', () => {
+      const dist = this.camera.position.distanceTo(this.moon.position);
+      if (this.onZoomChange) {
+        if (dist < 2.2) {
+          this.onZoomChange('close');
+        } else if (dist < 3.5) {
+          this.onZoomChange('medium');
+        } else {
+          this.onZoomChange('far');
+        }
+      }
+    });
+  }
+
+  setupRaycaster() {
+    this.raycaster = new THREE.Raycaster();
+    this.pointer = new THREE.Vector2();
+
+    let touchStartTime = 0;
+    let touchStartPos = { x: 0, y: 0 };
+
+    this.renderer.domElement.addEventListener('pointerdown', (e) => {
+      touchStartTime = Date.now();
+      touchStartPos = { x: e.clientX, y: e.clientY };
+    });
+
+    this.renderer.domElement.addEventListener('pointerup', (e) => {
+      const dt = Date.now() - touchStartTime;
+      const dx = Math.abs(e.clientX - touchStartPos.x);
+      const dy = Math.abs(e.clientY - touchStartPos.y);
+      if (dt < 300 && dx < 5 && dy < 5) {
+        this.handleClick(e);
+      }
+    });
+  }
+
+  handleClick(event) {
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    this.pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    this.pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+    this.raycaster.setFromCamera(this.pointer, this.camera);
+    const intersects = this.raycaster.intersectObjects(this.traceMeshes);
+
+    if (intersects.length > 0) {
+      const traceData = intersects[0].object.userData;
+      if (this.onTraceClick) {
+        this.onTraceClick(traceData);
+      }
+    }
+  }
+
+  addTrace(traceData) {
+    const position = traceData.position || {};
+    const lat = Number.isFinite(Number(position.lat)) ? Number(position.lat) : 0;
+    const lng = Number.isFinite(Number(position.lng)) ? Number(position.lng) : 0;
+    const phi = (90 - lat) * Math.PI / 180;
+    const theta = (lng + 180) * Math.PI / 180;
+    const r = 1.02;
+
+    const x = -r * Math.sin(phi) * Math.cos(theta);
+    const y = r * Math.cos(phi);
+    const z = r * Math.sin(phi) * Math.sin(theta);
+    const pos = new THREE.Vector3(x, y, z);
+
+    const geo = new THREE.SphereGeometry(0.025, 16, 16);
+    const mat = new THREE.MeshBasicMaterial({
+      color: traceData.color || 0xf4a261,
+      transparent: true,
+      opacity: 0.9
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.copy(pos);
+    mesh.userData = traceData;
+
+    const glowGeo = new THREE.SphereGeometry(0.035, 16, 16);
+    const glowMat = new THREE.MeshBasicMaterial({
+      color: traceData.color || 0xf4a261,
+      transparent: true,
+      opacity: 0.1,
+      depthWrite: false
+    });
+    const glow = new THREE.Mesh(glowGeo, glowMat);
+    mesh.add(glow);
+
+    const detail = createTraceDetail(traceData.type, traceData.color);
+    if (detail) {
+      detail.group.position.copy(pos);
+      const normal = pos.clone().normalize();
+      detail.group.up.copy(normal);
+      detail.group.lookAt(new THREE.Vector3(0, 0, 0));
+      detail.group.scale.setScalar(0);
+    }
+
+    this.traceGroup.add(mesh);
+    if (detail) this.traceGroup.add(detail.group);
+    this.traceMeshes.push(mesh);
+
+    const traceObj = { mesh, glow, detail, phase: Math.random() * Math.PI * 2, data: traceData };
+    this.traces.push(traceObj);
+    return traceObj;
+  }
+
+  loadTraces(traces) {
+    (traces || []).forEach(t => {
+      const traceView = toTraceView(t);
+      const color = typeof traceView.color === 'number' && Number.isFinite(traceView.color)
+        ? traceView.color
+        : 0xf4a261;
+      this.addTrace({
+        ...traceView,
+        color: color
+      });
+    });
+  }
+
+  animate() {
+    requestAnimationFrame(() => this.animate());
+    this.controls.update();
+
+    if (this.stars) {
+      this.stars.rotation.y += 0.00005;
+    }
+
+    if (this.earth) {
+      this.earth.rotation.y += 0.001;
+    }
+
+    const now = Date.now() * 0.001;
+    const dist = this.camera.position.distanceTo(this.moon.position);
+    const detailScale = dist < 2.0 ? Math.min(1, (2.0 - dist) * 3) : 0;
+    this.traces.forEach(t => {
+      const opacity = 0.5 + 0.4 * Math.sin(now + t.phase);
+      t.mesh.material.opacity = opacity;
+      t.glow.material.opacity = 0.08 + 0.12 * Math.sin(now + t.phase);
+      if (t.detail) {
+        const target = detailScale;
+        const cur = t.detail.group.scale.x;
+        const next = cur + (target - cur) * 0.15;
+        t.detail.group.scale.setScalar(next);
+        if (t.detail.halo && t.detail.halo.material) {
+          t.detail.halo.material.opacity = 0.12 + 0.08 * Math.sin(now * 2 + t.phase);
+        }
+      }
+    });
+
+    this.renderer.render(this.scene, this.camera);
+  }
+
+  onResize() {
+    this.camera.aspect = window.innerWidth / window.innerHeight;
+    this.camera.updateProjectionMatrix();
+    this.renderer.setSize(window.innerWidth, window.innerHeight);
+  }
+
+  getRandomSurfacePosition() {
+    const lat = Math.random() * 160 - 80;
+    const lng = Math.random() * 360 - 180;
+    return { lat, lng };
+  }
+}
