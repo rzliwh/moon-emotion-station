@@ -11,7 +11,23 @@ export class MoonScene {
     this.traceMeshes = [];
     this.onTraceClick = null;
     this.onZoomChange = null;
+    this.moonlight = 0;
+    this.targetEarthEmissive = 1.0125;
     this.init();
+  }
+
+  setMoonlight(value) {
+    this.moonlight = value;
+    // 0-2条: 基础亮度 1.0125
+    // 3-4条: 变亮 1.6875
+    // 5条+: 最亮 2.7
+    if (value >= 5) {
+      this.targetEarthEmissive = 2.7;
+    } else if (value >= 3) {
+      this.targetEarthEmissive = 1.6875;
+    } else {
+      this.targetEarthEmissive = 1.0125;
+    }
   }
 
   init() {
@@ -101,29 +117,19 @@ export class MoonScene {
   }
 
   createEarth() {
-    const geo = new THREE.SphereGeometry(0.12, 32, 32);
+    const geo = new THREE.SphereGeometry(0.15, 32, 32);
     const earthTex = createEarthTexture();
 
     const mat = new THREE.MeshStandardMaterial({
       map: earthTex,
       emissive: 0x112244,
-      emissiveIntensity: 0.3,
+      emissiveIntensity: 1.0125,
       roughness: 0.8
     });
 
     this.earth = new THREE.Mesh(geo, mat);
     this.earth.position.set(0, 0.5, 8);
     this.scene.add(this.earth);
-
-    const glowGeo = new THREE.SphereGeometry(0.16, 32, 32);
-    const glowMat = new THREE.MeshBasicMaterial({
-      color: 0x378add,
-      transparent: true,
-      opacity: 0.15,
-      side: THREE.BackSide
-    });
-    const glow = new THREE.Mesh(glowGeo, glowMat);
-    this.earth.add(glow);
   }
 
   setupControls() {
@@ -263,6 +269,11 @@ export class MoonScene {
 
     if (this.earth) {
       this.earth.rotation.y += 0.001;
+      // 地球亮度随月光值 lerp 平滑过渡
+      if (this.earth.material) {
+        const cur = this.earth.material.emissiveIntensity;
+        this.earth.material.emissiveIntensity = cur + (this.targetEarthEmissive - cur) * 0.05;
+      }
     }
 
     const now = Date.now() * 0.001;

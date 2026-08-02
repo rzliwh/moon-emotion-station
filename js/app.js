@@ -43,6 +43,7 @@ const App = {
     }
 
     UI.updateMoonlight(this.data.moonlight);
+    this.scene.setMoonlight(this.data.moonlight);
 
     UI.hideLoading();
 
@@ -156,6 +157,7 @@ const App = {
         UI.updateMoonlight(this.data.traces.length + 1);
         const data = Storage.loadData();
         UI.updateMoonlight(data.moonlight);
+        this.scene.setMoonlight(data.moonlight);
       }
       UI.el.signalCardArea.innerHTML = '';
       UI.showToast('月球上多了一个痕迹', 2000);
@@ -208,6 +210,7 @@ const App = {
     this.scene.traces = [];
     this.scene.loadTraces(this.data.traces);
     UI.updateMoonlight(this.data.moonlight);
+    this.scene.setMoonlight(this.data.moonlight);
     UI.el.traceCount.textContent = this.data.traces.length;
     UI.showToast(`导入成功！新增 ${mergeResult.merged} 个痕迹，共 ${mergeResult.total} 个`, 3000);
     UI.el.importCode.value = '';
@@ -222,6 +225,7 @@ const App = {
         this.scene.traceMeshes = [];
         this.scene.traces = [];
         UI.updateMoonlight(0);
+        this.scene.setMoonlight(0);
         UI.el.traceCount.textContent = '0';
         UI.el.moonlightDisplay.textContent = '0';
         UI.showToast('所有数据已清除', 2000);

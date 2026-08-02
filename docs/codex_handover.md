@@ -294,7 +294,7 @@ python -m http.server 8000
 | 资源 | 用途 |
 |------|------|
 | `moon_ui_design.md` | UI设计稿v3，含布局/视觉/3D月球/痕迹细节/存储迁移完整设计 |
-| `moon_emotion_scripts.md` | 3条电波脚本 + 回信文案标准 + 延迟设计逻辑 |
+| `moon_emotion_scripts.md` | 12条电波脚本 + 回信文案标准 + 延迟设计逻辑 |
 | NASA LRO 纹理 | svs.gsfc.nasa.gov/4720，正式版替换程序化纹理 |
 | Artemis II Earthrise 照片 | 月球背面看地球的视觉参考 |
 
