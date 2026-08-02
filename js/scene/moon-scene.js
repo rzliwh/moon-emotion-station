@@ -12,21 +12,21 @@ export class MoonScene {
     this.onTraceClick = null;
     this.onZoomChange = null;
     this.moonlight = 0;
-    this.targetEarthEmissive = 0.675;
+    this.targetEarthEmissive = 1.0125;
     this.init();
   }
 
   setMoonlight(value) {
     this.moonlight = value;
-    // 0-2条: 基础亮度 0.675
-    // 3-4条: 变亮 1.125
-    // 5条+: 最亮 1.8
+    // 0-2条: 基础亮度 1.0125
+    // 3-4条: 变亮 1.6875
+    // 5条+: 最亮 2.7
     if (value >= 5) {
-      this.targetEarthEmissive = 1.8;
+      this.targetEarthEmissive = 2.7;
     } else if (value >= 3) {
-      this.targetEarthEmissive = 1.125;
+      this.targetEarthEmissive = 1.6875;
     } else {
-      this.targetEarthEmissive = 0.675;
+      this.targetEarthEmissive = 1.0125;
     }
   }
 
@@ -123,7 +123,7 @@ export class MoonScene {
     const mat = new THREE.MeshStandardMaterial({
       map: earthTex,
       emissive: 0x112244,
-      emissiveIntensity: 0.675,
+      emissiveIntensity: 1.0125,
       roughness: 0.8
     });
 
