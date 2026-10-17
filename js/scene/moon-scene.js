@@ -54,11 +54,13 @@ export class MoonScene {
   }
 
   setupLights() {
-    const ambient = new THREE.AmbientLight(0x333355, 0.4);
+    // 环境光调高一点，补偿背光面（任务书：0.4 → 0.5）
+    const ambient = new THREE.AmbientLight(0x333355, 0.5);
     this.scene.add(ambient);
 
+    // 太阳与地球对冲：地球在 +z，太阳在 -z。DirectionalLight 只看方向。
     const sun = new THREE.DirectionalLight(0xffffff, 1.2);
-    sun.position.set(5, 3, 5);
+    sun.position.set(-18, 6, -30);
     this.scene.add(sun);
 
     const fill = new THREE.DirectionalLight(0x4466aa, 0.3);
