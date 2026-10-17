@@ -172,11 +172,7 @@ const App = {
           const unlocked = this.scene.getUnlockedPlanets();
           const seen = new Set([...(data.planetUnlockSeen || []), ...newly.map(d => d.key)]);
           Storage.setPlanetState(unlocked, Array.from(seen));
-          newly.forEach((def, i) => {
-            setTimeout(() => {
-              UI.showToast(def.name + '在夜空中亮起', 3000);
-            }, 1500 + i * 1200);
-          });
+          setTimeout(() => this.showPlanetUnlocks(newly), 1500);
         }
       }
       UI.el.signalCardArea.innerHTML = '';
@@ -185,6 +181,15 @@ const App = {
         this.showNextSignal();
       }, 2500);
     });
+  },
+
+  showPlanetUnlocks(defs) {
+    const next = (i) => {
+      if (i >= defs.length) return;
+      AudioManager.playPlanetUnlock();
+      UI.showPlanetUnlockToast(defs[i], () => next(i + 1));
+    };
+    next(0);
   },
 
   exportData() {

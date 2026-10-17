@@ -237,6 +237,30 @@ const AudioManager = {
     });
   },
 
+  playPlanetUnlock() {
+    if (!this.ctx || !this.sfxEnabled) return;
+    const now = this.ctx.currentTime;
+    const notes = [523.25, 659.25, 783.99, 1046.5]; // C5 E5 G5 C6
+    const intervals = [0, 0.16, 0.32, 0.52];
+
+    notes.forEach((freq, i) => {
+      const osc = this.ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+
+      const gain = this.ctx.createGain();
+      const t = now + intervals[i];
+      gain.gain.setValueAtTime(0, t);
+      gain.gain.linearRampToValueAtTime(i === 3 ? 0.16 : 0.2, t + 0.04);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + (i === 3 ? 1.2 : 1.4));
+
+      osc.connect(gain);
+      gain.connect(this.sfxGain);
+      osc.start(t);
+      osc.stop(t + (i === 3 ? 1.3 : 1.5));
+    });
+  },
+
   // ==================== 控制 ====================
 
   resume() {

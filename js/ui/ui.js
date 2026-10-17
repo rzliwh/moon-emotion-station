@@ -257,6 +257,35 @@ export const UI = {
     this.el.importArea.classList.remove('active');
   },
 
+  showPlanetUnlockToast(def, onClose) {
+    const old = document.getElementById('planet-unlock-toast');
+    if (old) old.remove();
+
+    const el = document.createElement('div');
+    el.id = 'planet-unlock-toast';
+    el.innerHTML = `
+      <div class="put-kicker">新的星体进入视野</div>
+      <div class="put-name">${def.name}</div>
+      <div class="put-text">${def.unlockText || ''}</div>
+      <button class="put-btn">继续</button>
+    `;
+    document.body.appendChild(el);
+
+    let closed = false;
+    const close = () => {
+      if (closed) return;
+      closed = true;
+      clearTimeout(timer);
+      el.classList.add('out');
+      setTimeout(() => {
+        el.remove();
+        if (onClose) onClose();
+      }, 260);
+    };
+    const timer = setTimeout(close, 3000);
+    el.querySelector('.put-btn').addEventListener('click', close);
+  },
+
   showToast(msg, duration = 2500) {
     this.el.toast.textContent = msg;
     this.el.toast.classList.add('show');
