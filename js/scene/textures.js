@@ -44,3 +44,22 @@ export function createMoonBumpMap() {
 export function createEarthTexture() {
   return textureLoader.load(EARTH_TEXTURE_URL);
 }
+
+// 太阳光晕：径向渐变贴图，配合 Sprite 的叠加混合。
+// 用贴图做柔和衰减，避免几个半透明球壳叠出来的硬边和塑料感。
+export function createSunGlowTexture() {
+  const size = 256;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  const g = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+  g.addColorStop(0, 'rgba(255, 246, 224, 1)');
+  g.addColorStop(0.12, 'rgba(255, 232, 196, 0.9)');
+  g.addColorStop(0.3, 'rgba(255, 208, 150, 0.42)');
+  g.addColorStop(0.62, 'rgba(255, 178, 110, 0.12)');
+  g.addColorStop(1, 'rgba(255, 150, 80, 0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, size, size);
+  return new THREE.CanvasTexture(canvas);
+}

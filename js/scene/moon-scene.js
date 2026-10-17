@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { toTraceView } from '../core/schema.js';
-import { createMoonTexture, createMoonBumpMap, createEarthTexture } from './textures.js';
+import { createMoonTexture, createMoonBumpMap, createEarthTexture, createSunGlowTexture } from './textures.js';
 import { createTraceDetail } from './trace-detail.js';
 
 export class MoonScene {
@@ -46,6 +46,7 @@ export class MoonScene {
     this.createStars();
     this.createMoon();
     this.createEarth();
+    this.createSun();
     this.setupControls();
     this.setupRaycaster();
 
@@ -66,6 +67,13 @@ export class MoonScene {
     const fill = new THREE.DirectionalLight(0x4466aa, 0.3);
     fill.position.set(-5, -2, -3);
     this.scene.add(fill);
+
+    // 地球反照：从地球方向补一点冷光，暗面不至于全黑。
+    // three r160 的点光源默认按距离衰减，0.1 在距离 7 处几乎不可见，
+    // 所以这里用 decay: 0，保持一个稳定的弱补光。
+    const earthshine = new THREE.PointLight(0x4466aa, 0.25, 0, 0);
+    earthshine.position.set(0, 0.5, 8);
+    this.scene.add(earthshine);
   }
 
   createStars() {
@@ -132,6 +140,48 @@ export class MoonScene {
     this.earth = new THREE.Mesh(geo, mat);
     this.earth.position.set(0, 0.5, 8);
     this.scene.add(this.earth);
+  }
+
+  createSun() {
+    const sunPos = new THREE.Vector3(-18, 6, -30);
+    const sunGroup = new THREE.Group();
+    sunGroup.position.copy(sunPos);
+
+    // 核心：小一点、暖白，不要纯白
+    const core = new THREE.Mesh(
+      new THREE.SphereGeometry(1.0, 32, 32),
+      new THREE.MeshBasicMaterial({ color: 0xffe6c2 })
+    );
+    sunGroup.add(core);
+
+    // 光晕：径向渐变贴图 + 叠加混合，避免球形壳的硬边和塑料感
+    const glowTex = createSunGlowTexture();
+
+    const glow = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: glowTex,
+      color: 0xffd9a0,
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      opacity: 0.85
+    }));
+    glow.scale.set(5.5, 5.5, 1);
+    sunGroup.add(glow);
+
+    const halo = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: glowTex,
+      color: 0xffc98a,
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      opacity: 0.3
+    }));
+    halo.scale.set(11, 11, 1);
+    sunGroup.add(halo);
+
+    this.sun = sunGroup;
+    this.sun.userData = { core, glow, halo };
+    this.scene.add(sunGroup);
   }
 
   setupControls() {
@@ -279,6 +329,13 @@ export class MoonScene {
     }
 
     const now = Date.now() * 0.001;
+
+    if (this.sun) {
+      const { glow, halo } = this.sun.userData;
+      glow.material.opacity = 0.85 + 0.07 * Math.sin(now * 0.3);
+      halo.material.opacity = 0.3 + 0.05 * Math.sin(now * 0.3);
+    }
+
     const dist = this.camera.position.distanceTo(this.moon.position);
     const detailScale = dist < 2.0 ? Math.min(1, (2.0 - dist) * 3) : 0;
     this.traces.forEach(t => {
