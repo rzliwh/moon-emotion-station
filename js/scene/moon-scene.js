@@ -44,6 +44,7 @@ export class MoonScene {
 
     this.setupLights();
     this.createStars();
+    this.createBigDipper();
     this.createMoon();
     this.createEarth();
     this.createSun();
@@ -103,6 +104,52 @@ export class MoonScene {
     });
     this.stars = new THREE.Points(geo, mat);
     this.scene.add(this.stars);
+  }
+
+  createBigDipper() {
+    // 勺形（归一化 2D）：
+    // 斗勺是闭合四边形：天枢、天璇、天玑、天权；
+    // 斗柄从「天权」延伸出去：玉衡、开阳、摇光。
+    const dipper2D = [
+      [0.24, 1.83], // 天枢（偏离中线，离天权更远；到天璇的距离对齐天玑）
+      [0.0, 0.0],   // 天璇（中线上）
+      [1.2, -1.4],  // 天玑（中线另一侧，靠近天璇）
+      [2.2, 0.0],   // 天权（中线上，斗柄连接点）
+      [3.8, 0.0],   // 玉衡（中线上）
+      [5.4, 0.0],   // 开阳（中线上）
+      [7.0, -0.72]  // 摇光（偏离中线，斗柄收尾带一点弯）
+    ];
+
+    const R = 100;
+    const scale = 3.5;
+    const base = new THREE.Vector3(0, 0.7, -0.7).normalize();
+
+    // 用 Points，跟背景星空同一种渲染方式。
+    // 不用球体加光晕球，那样会有球壳的硬边和塑料感。
+    const positions = new Float32Array(dipper2D.length * 3);
+    dipper2D.forEach(([dx, dy], i) => {
+      const pos = base.clone().multiplyScalar(R);
+      pos.x += dx * scale;
+      pos.y += dy * scale * 0.8;
+      positions[i * 3] = pos.x;
+      positions[i * 3 + 1] = pos.y;
+      positions[i * 3 + 2] = pos.z;
+    });
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+    const mat = new THREE.PointsMaterial({
+      color: 0xcfe0ff,
+      size: 1.3,
+      sizeAttenuation: true,
+      transparent: true,
+      opacity: 0.76,
+      depthWrite: false
+    });
+
+    const dipper = new THREE.Points(geo, mat);
+    this.stars.add(dipper);
   }
 
   createMoon() {
