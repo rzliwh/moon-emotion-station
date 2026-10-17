@@ -1,8 +1,18 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { toTraceView } from '../core/schema.js';
-import { createMoonTexture, createMoonBumpMap, createEarthTexture, createSunGlowTexture } from './textures.js';
+import { createMoonTexture, createMoonBumpMap, createEarthTexture, createSunGlowTexture, createPlanetTexture } from './textures.js';
 import { createTraceDetail } from './trace-detail.js';
+
+// 行星解锁表。角度都落在 +z 半球（地球同侧），避开太阳。
+const PLANET_DEFS = [
+  { key: 'venus',   name: '金星',   radius: 0.09, distance: 6.5,  angle: -1.0,  unlockAt: 1,  baseOpacity: 1.0, color: 0xe8c872, unlockText: '第一封回信抵达时，金星在夜空中亮起' },
+  { key: 'mars',    name: '火星',   radius: 0.08, distance: 7.5,  angle: -0.35, unlockAt: 3,  baseOpacity: 1.0, color: 0xd4785c, unlockText: '三封信件后，火星进入了视野' },
+  { key: 'jupiter', name: '木星',   radius: 0.25, distance: 12,   angle: 0.3,   unlockAt: 5,  baseOpacity: 1.0, color: 0xd8b88a, unlockText: '五封回信后，木星成为了夜空中最亮的星' },
+  { key: 'saturn',  name: '土星',   radius: 0.22, distance: 14,   angle: 0.8,   unlockAt: 7,  baseOpacity: 1.0, color: 0xc8b89a, ringColor: 0x74644b, hasRing: true, unlockText: '七封信件后，你看到了土星的光环' },
+  { key: 'neptune', name: '海王星', radius: 0.12, distance: 18,   angle: 1.15,  unlockAt: 10, baseOpacity: 1.0, color: 0x6b8ac8, unlockText: '十封信件后，海王星在深处闪烁' },
+  { key: 'pluto',   name: '冥王星', radius: 0.04, distance: 22,   angle: 1.4,   unlockAt: 15, baseOpacity: 1.0, color: 0xa8a8b8, unlockText: '十五封信件后，你发现了冥王星，最遥远的守望者' }
+];
 
 export class MoonScene {
   constructor(container) {
@@ -13,6 +23,9 @@ export class MoonScene {
     this.onZoomChange = null;
     this.moonlight = 0;
     this.targetEarthEmissive = 1.0125;
+    this.planets = [];
+    this.unlockedPlanets = new Set();
+    this.pendingUnlocks = [];
     this.init();
   }
 
@@ -47,6 +60,7 @@ export class MoonScene {
     this.createBigDipper();
     this.createMoon();
     this.createEarth();
+    this.createPlanets();
     this.createSun();
     this.setupControls();
     this.setupRaycaster();
@@ -231,6 +245,220 @@ export class MoonScene {
     this.scene.add(sunGroup);
   }
 
+  createPlanets() {
+    this.planets = [];
+    PLANET_DEFS.forEach(def => {
+      const geo = new THREE.SphereGeometry(def.radius, 32, 32);
+      const mat = new THREE.MeshBasicMaterial({
+        map: createPlanetTexture(def.color, { polarCaps: def.key === 'mars' }),
+        transparent: true,
+        opacity: 0,
+        depthWrite: false
+      });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.position.set(
+        Math.sin(def.angle) * def.distance,
+        0.3,
+        Math.cos(def.angle) * def.distance
+      );
+      mesh.userData = { ...def };
+
+      if (def.hasRing) {
+        const ring = new THREE.Mesh(
+          new THREE.RingGeometry(def.radius * 1.3, def.radius * 2, 64),
+          new THREE.MeshBasicMaterial({
+            color: def.ringColor || def.color,
+            side: THREE.DoubleSide,
+            transparent: true,
+            opacity: 0,
+            depthWrite: false
+          })
+        );
+        ring.rotation.x = Math.PI * 0.35;
+        mesh.add(ring);
+        mesh.userData.ring = ring;
+      }
+
+      this.scene.add(mesh);
+      this.planets.push(mesh);
+    });
+  }
+
+  /* 按回信数直接点亮已解锁的行星，不播动画、不弹提示。
+   * 用于启动时恢复存档，以及导入数据后重算。 */
+  applyUnlockedByCount(replyCount) {
+    const keys = PLANET_DEFS
+      .filter(def => replyCount >= def.unlockAt)
+      .map(def => def.key);
+    this.applyUnlockedPlanets(keys);
+    return keys;
+  }
+
+  applyUnlockedPlanets(keys) {
+    (keys || []).forEach(key => {
+      const planet = this.planets.find(p => p.userData.key === key);
+      if (!planet || this.unlockedPlanets.has(key)) return;
+      this.unlockedPlanets.add(key);
+      planet.material.transparent = false;
+      planet.material.opacity = 1;
+      planet.material.depthWrite = true;
+      planet.material.needsUpdate = true;
+      if (planet.userData.ring) {
+        planet.userData.ring.material.transparent = false;
+        planet.userData.ring.material.opacity = 1;
+        planet.userData.ring.material.depthWrite = true;
+        planet.userData.ring.material.needsUpdate = true;
+      }
+    });
+  }
+
+  resetPlanets() {
+    this.unlockedPlanets.clear();
+    this.pendingUnlocks = [];
+    this.planets.forEach(p => {
+      p.material.transparent = true;
+      p.material.opacity = 0;
+      p.material.depthWrite = false;
+      p.material.needsUpdate = true;
+      if (p.userData.ring) {
+        p.userData.ring.material.transparent = true;
+        p.userData.ring.material.opacity = 0;
+        p.userData.ring.material.depthWrite = false;
+        p.userData.ring.material.needsUpdate = true;
+      }
+    });
+  }
+
+  /* 回信数变化时调用。返回这次新解锁的行星。 */
+  checkPlanetUnlocks(replyCount) {
+    const newly = [];
+    PLANET_DEFS.forEach(def => {
+      if (replyCount >= def.unlockAt && !this.unlockedPlanets.has(def.key)) {
+        this.unlockPlanet(def);
+        newly.push(def);
+      }
+    });
+    return newly;
+  }
+
+  unlockPlanet(def) {
+    const planet = this.planets.find(p => p.userData.key === def.key);
+    if (!planet) return;
+
+    this.unlockedPlanets.add(def.key);
+    this.pendingUnlocks.push(def);
+
+    // 2 秒渐显，前半程带一点呼吸闪烁
+    const target = def.baseOpacity;
+    const duration = 2000;
+    const start = Date.now();
+    const animate = () => {
+      const t = Math.min(1, (Date.now() - start) / duration);
+      const ease = 1 - Math.pow(1 - t, 3);
+      let opacity = ease * target;
+      if (t < 0.5) opacity += 0.3 * Math.sin(t * Math.PI * 4) * target;
+      planet.material.opacity = Math.max(0, opacity);
+      if (planet.userData.ring) {
+        planet.userData.ring.material.opacity = planet.material.opacity;
+      }
+      if (t < 1) {
+        requestAnimationFrame(animate);
+      } else {
+        // 渐显结束后切成不透明，避免背景星星透过来
+        planet.material.transparent = false;
+        planet.material.opacity = 1;
+        planet.material.depthWrite = true;
+        planet.material.needsUpdate = true;
+        if (planet.userData.ring) {
+          planet.userData.ring.material.transparent = false;
+          planet.userData.ring.material.opacity = 1;
+          planet.userData.ring.material.depthWrite = true;
+          planet.userData.ring.material.needsUpdate = true;
+        }
+      }
+    };
+    animate();
+
+    this.spawnParticles({
+      x: planet.position.x,
+      y: planet.position.y,
+      z: planet.position.z,
+      count: 20,
+      color: def.color,
+      lifetime: 1.5,
+      speed: 6,
+      size: 0.6
+    });
+  }
+
+  getPendingUnlocks() {
+    const list = this.pendingUnlocks.slice();
+    this.pendingUnlocks = [];
+    return list;
+  }
+
+  getUnlockedPlanets() {
+    return Array.from(this.unlockedPlanets);
+  }
+
+  /* 轻量粒子爆发：给解锁加一点仪式感。
+   * 任务书里提到的 spawnParticles 在当前代码里不存在，这里补一个最小实现。 */
+  spawnParticles({ x, y, z, count = 20, color = 0xffffff, lifetime = 1.5, speed = 6, size = 0.6 }) {
+    const positions = new Float32Array(count * 3);
+    const velocities = [];
+    for (let i = 0; i < count; i++) {
+      positions[i * 3] = x;
+      positions[i * 3 + 1] = y;
+      positions[i * 3 + 2] = z;
+      const theta = Math.random() * Math.PI * 2;
+      const phi = Math.acos(Math.random() * 2 - 1);
+      const v = speed * (0.5 + Math.random() * 0.5);
+      velocities.push(new THREE.Vector3(
+        v * Math.sin(phi) * Math.cos(theta),
+        v * Math.sin(phi) * Math.sin(theta),
+        v * Math.cos(phi)
+      ));
+    }
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    const mat = new THREE.PointsMaterial({
+      color,
+      size,
+      transparent: true,
+      opacity: 1,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending
+    });
+    const points = new THREE.Points(geo, mat);
+    this.scene.add(points);
+
+    const start = Date.now();
+    let last = start;
+    const step = () => {
+      const now = Date.now();
+      const dt = Math.min(0.05, (now - last) / 1000);
+      last = now;
+      const t = (now - start) / (lifetime * 1000);
+      if (t >= 1) {
+        this.scene.remove(points);
+        geo.dispose();
+        mat.dispose();
+        return;
+      }
+      const arr = geo.attributes.position.array;
+      for (let i = 0; i < count; i++) {
+        arr[i * 3] += velocities[i].x * dt;
+        arr[i * 3 + 1] += velocities[i].y * dt;
+        arr[i * 3 + 2] += velocities[i].z * dt;
+      }
+      geo.attributes.position.needsUpdate = true;
+      mat.opacity = 1 - t;
+      requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  }
+
   setupControls() {
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
@@ -382,6 +610,10 @@ export class MoonScene {
       glow.material.opacity = 0.85 + 0.07 * Math.sin(now * 0.3);
       halo.material.opacity = 0.3 + 0.05 * Math.sin(now * 0.3);
     }
+
+    this.planets.forEach(p => {
+      if (p.material.opacity > 0) p.rotation.y += 0.0005;
+    });
 
     const dist = this.camera.position.distanceTo(this.moon.position);
     const detailScale = dist < 2.0 ? Math.min(1, (2.0 - dist) * 3) : 0;

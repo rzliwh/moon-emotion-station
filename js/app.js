@@ -42,6 +42,14 @@ const App = {
       this.scene.loadTraces(this.data.traces);
     }
 
+    // 启动时按回信数恢复行星，不播动画、不弹提示
+    const savedUnlocked = Array.isArray(this.data.unlockedPlanets) ? this.data.unlockedPlanets : [];
+    const derivedUnlocked = this.scene.applyUnlockedByCount(this.data.traces.length);
+    const allUnlocked = Array.from(new Set([...savedUnlocked, ...derivedUnlocked]));
+    this.scene.applyUnlockedPlanets(allUnlocked);
+    const seen = new Set([...(this.data.planetUnlockSeen || []), ...allUnlocked]);
+    Storage.setPlanetState(allUnlocked, Array.from(seen));
+
     UI.updateMoonlight(this.data.moonlight);
     this.scene.setMoonlight(this.data.moonlight);
 
@@ -158,6 +166,18 @@ const App = {
         const data = Storage.loadData();
         UI.updateMoonlight(data.moonlight);
         this.scene.setMoonlight(data.moonlight);
+
+        const newly = this.scene.checkPlanetUnlocks(data.traces.length);
+        if (newly.length) {
+          const unlocked = this.scene.getUnlockedPlanets();
+          const seen = new Set([...(data.planetUnlockSeen || []), ...newly.map(d => d.key)]);
+          Storage.setPlanetState(unlocked, Array.from(seen));
+          newly.forEach((def, i) => {
+            setTimeout(() => {
+              UI.showToast(def.name + '在夜空中亮起', 3000);
+            }, 1500 + i * 1200);
+          });
+        }
       }
       UI.el.signalCardArea.innerHTML = '';
       UI.showToast('月球上多了一个痕迹', 2000);
@@ -209,6 +229,15 @@ const App = {
     this.scene.traceMeshes = [];
     this.scene.traces = [];
     this.scene.loadTraces(this.data.traces);
+
+    this.scene.resetPlanets();
+    const saved = Array.isArray(this.data.unlockedPlanets) ? this.data.unlockedPlanets : [];
+    const derived = this.scene.applyUnlockedByCount(this.data.traces.length);
+    const all = Array.from(new Set([...saved, ...derived]));
+    this.scene.applyUnlockedPlanets(all);
+    const seen = new Set([...(this.data.planetUnlockSeen || []), ...all]);
+    Storage.setPlanetState(all, Array.from(seen));
+
     UI.updateMoonlight(this.data.moonlight);
     this.scene.setMoonlight(this.data.moonlight);
     UI.el.traceCount.textContent = this.data.traces.length;
@@ -224,6 +253,7 @@ const App = {
         this.scene.traceMeshes.forEach(m => this.scene.traceGroup.remove(m));
         this.scene.traceMeshes = [];
         this.scene.traces = [];
+        this.scene.resetPlanets();
         UI.updateMoonlight(0);
         this.scene.setMoonlight(0);
         UI.el.traceCount.textContent = '0';

@@ -28,7 +28,9 @@ export const Storage = {
     return {
       ...data,
       traces: Array.isArray(data.traces) ? data.traces.map(trace => toTraceView(trace)) : [],
-      pendingReplies: Array.isArray(data.pendingReplies) ? data.pendingReplies : []
+      pendingReplies: Array.isArray(data.pendingReplies) ? data.pendingReplies : [],
+      unlockedPlanets: Array.isArray(data.unlockedPlanets) ? data.unlockedPlanets : [],
+      planetUnlockSeen: Array.isArray(data.planetUnlockSeen) ? data.planetUnlockSeen : []
     };
   },
 
@@ -40,7 +42,9 @@ export const Storage = {
       moonlight: 0,
       traces: [],
       pendingReplies: [],
-      currentWaveIndex: 0
+      currentWaveIndex: 0,
+      unlockedPlanets: [],
+      planetUnlockSeen: []
     };
     this.saveData(data);
     return data;
@@ -114,6 +118,15 @@ export const Storage = {
     }
   },
 
+  setPlanetState(unlocked, seen) {
+    const data = this.loadData();
+    if (!data) return;
+    data.unlockedPlanets = Array.isArray(unlocked) ? unlocked : [];
+    data.planetUnlockSeen = Array.isArray(seen) ? seen : [];
+    data.lastActive = new Date().toISOString();
+    this.saveData(data);
+  },
+
   exportCode() {
     const data = this.loadData();
     if (!data) return '';
@@ -144,13 +157,21 @@ export const Storage = {
       const merged = {
         ...importedData,
         traces: importedTraces,
-        pendingReplies: importedPendingReplies
+        pendingReplies: importedPendingReplies,
+        unlockedPlanets: Array.isArray(importedData.unlockedPlanets) ? importedData.unlockedPlanets : [],
+        planetUnlockSeen: Array.isArray(importedData.planetUnlockSeen) ? importedData.planetUnlockSeen : []
       };
       this.saveData(merged);
       return { merged: importedTraces.length, total: importedTraces.length };
     }
     if (!Array.isArray(current.traces)) current.traces = [];
     if (!Array.isArray(current.pendingReplies)) current.pendingReplies = [];
+    const mergeKeys = (a, b) => Array.from(new Set([
+      ...(Array.isArray(a) ? a : []),
+      ...(Array.isArray(b) ? b : [])
+    ]));
+    current.unlockedPlanets = mergeKeys(current.unlockedPlanets, importedData.unlockedPlanets);
+    current.planetUnlockSeen = mergeKeys(current.planetUnlockSeen, importedData.planetUnlockSeen);
     const existingIds = new Set(current.traces.map(t => t.id));
     let merged = 0;
     importedTraces.forEach(t => {
